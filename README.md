@@ -19,7 +19,7 @@ Please fork the repository and do the test on your fork.
 There are a couple of files that you may not change, these include:
 
 - anything in the `.github/` directory
-- anything in the `CI` directory
+- anything in the `.ci/` directory
 
 ### Do The API Excercise
 
