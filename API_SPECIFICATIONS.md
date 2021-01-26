@@ -29,4 +29,6 @@ The following build tools are acceptable:
  * docker
  * docker-compose
 
+## 4. Kubernetes
+Setup the deployment of your application to a Kubernetes cluster, this includes the manifests for your application. This will also form part of the automated testing so will require an Ingress. For more information refer to the [README](./README.md) section **CI/CD Kubernetes Environment**
 
