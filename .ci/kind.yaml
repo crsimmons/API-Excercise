@@ -1,10 +1,6 @@
 # a cluster with 1 control-plane nodes and 1 workers
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-containerdConfigPatches:
-  - |-
-    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."trow.local:443"]
-      endpoint = ["https://trow.local"]
 nodes:
   - role: control-plane
     kubeadmConfigPatches:
