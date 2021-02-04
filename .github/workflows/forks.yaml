@@ -1,9 +1,6 @@
 name: API Test
 
 on:
-  push:
-    branches:
-      - "*"
   pull_request:
     branches:
       - "*"
@@ -11,7 +8,7 @@ on:
 jobs:
   run_api_test:
     runs-on: ubuntu-latest
-    if: github.repository != 'ContainerSolutions/API-Excercise'
+    if: github.event.pull_request.head.repo.full_name != 'ContainerSolutions/API-Excercise'
     steps:
       - uses: actions/checkout@v2
       - uses: engineerd/setup-kind@v0.5.0
@@ -62,9 +59,14 @@ jobs:
       - name: Deploy Application to Kubernetes
         run: |
           ./deploy.sh
+      - name: setup python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
       - name: Run Tests
         run: |
-          echo "Running Awesome Tests"
+          pip install -r .ci/requirements.txt
+          pytest .ci/api_tester.py
       - name: Clean Up Cluster
         run: |
           kind delete cluster --name api-cluster
