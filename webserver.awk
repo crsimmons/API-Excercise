@@ -19,18 +19,38 @@ function BuildJSON(  output, line, l) {
     output = sprintf("%s {\"uuid\": \"%s\", \"survived\": %s, \"passengerClass\": %d, \"name\": \"%s\", \"sex\": \"%s\", \"age\": %d, \"siblingsOrSpousesAboard\": %d, \"parentsOrChildrenAboard\": %d, \"fare\": %s}", output, $1, $2?"false":"true", $3, $4, $5, $6, $7, $8, $9)
   }
   output = output "]"
-  Response = output
+  Response["Body"] = output
 }
 
-function Process_request(method, uri, version) {
-  delete Request
-  Request["Method"] = $1
-  Request["Endpoint"] = substr($2,2)
-  Request["Version"] = $3
- }
+function BuildJSONSingle(uuid,  output, line) {
+  FS=","
+  while ((getline line < "db.csv" ) > 0) {
+    if (!l++ || line !~ uuid) continue
+    $0=line
+    output = sprintf("%s {\"uuid\": \"%s\", \"survived\": %s, \"passengerClass\": %d, \"name\": \"%s\", \"sex\": \"%s\", \"age\": %d, \"siblingsOrSpousesAboard\": %d, \"parentsOrChildrenAboard\": %d, \"fare\": %s}", output, $1, $2?"false":"true", $3, $4, $5, $6, $7, $8, $9)
+    break
+  }
+  Response["Body"] = output
+}
+
+function UpdateDB(  command, record, uuid) {
+  command = "jq -r '\(.survived|tostring) + \",\" + \(.passengerClass|tostring) + \",\" + \(.name|tostring) + \",\" + \(.sex|tostring) + \",\" + \(.age|tostring) + \",\" + \(.siblingsOrSpousesAboard|tostring) + \",\" + \(.parentsOrChildrenAboard|tostring) + \",\" + \(.fare|tostring)'"
+  print Request["Body"] |& command
+  close(command, "to")
+
+  command |& getline record
+  close(command)
+
+  ("uuidgen" | getline uuid)
+  close("uuidgen")
+
+  print uuid "," record >> db.csv
+
+  BuildJSONSingle(uuid)
+  Response["Status"] = "201 CREATED"
+}
 
 function HandlePeople(ep) {
-  print "handling people"
   if (Request["Method"] == "GET") {
     if (length(ep) == 1) {
       BuildJson()
@@ -61,41 +81,66 @@ BEGIN {
 
   while (1) {
     RS = ORS = "\r\n"
-    ResponseStatus = 200
-    ResponseReason = "OK"
-    Response = ""
+    Response["Status"] = "200 OK"
+    Response["Body"] = ""
 
-    # wait for new client request
-    HttpService |& getline
+    # Loop until we have input
+    while ((HttpService |& getline) == -1 || !$0) continue
     # do some logging
     print systime(), strftime(), $0
-    # read request parameters
-    Process_request($1, $2, $3)
 
-    while ((HttpService |& getline) > 0) {
-      if ($0 == "") break
+    # start defining request
+    delete Request
+    Request["Method"]=$1
+    split($2, urlPieces, "?")
+    Request["Endpoint"] = substr(urlPieces[1],2)
+    Request["Length"] = 0
+    Request["Body"] = ""
+
+    # none of the endpoints support params
+    if (!Request["Endpoint"] || Request["Endpoint"] ~ /\?/) {
+      print "invalid endpoint: " Request["Endpoint"]
+      while (!(HttpService |& getline) != -1) {}
+      close(HttpService)
+      continue
+    }
+
+    # parse request headers
+    FS=": *"
+    while ($0) {
+      HttpService |& getline
+      if ($1) Request["Headers"][tolower($1)] = $2
+    }
+    FS=" "
+
+    # parse request body
+    contentLength = Request["Headers"]["content-length"]
+    if (contentLength) {
+      RS="}"
+      HttpService |& getline
+      Request["Body"] = $0 "}"
+      RS = "\r\n"
     }
 
     split(Request["Endpoint"], ep, "/")
-    print ep[1]
+    # print ep[1]
 
     if (ep[1] == "people") {
       HandlePeople(ep)
     } else {
-      Response = sprintf("bad endpoint: %s", Request["Endpoint"])
-      ResponseStatus = 404
-      ResponseReason = "NOT FOUND"
+      Response["Body"] = sprintf("bad endpoint: %s", Request["Endpoint"])
+      Response["Status"] = "404 NOT FOUND"
     }
-    print "HTTP/1.0", ResponseStatus, ResponseReason      |& HttpService
+    print "HTTP/1.0", Response["Status"]                  |& HttpService
     print "Connection: Close"                             |& HttpService
     print "Pragma: no-cache"                              |& HttpService
-    len = length(Response) + length(ORS)
+    len = length(Response["Body"]) + length(ORS)
     print "Content-length:", len                          |& HttpService
-    print ORS Response                                    |& HttpService
+    print "X-Powered-By: awk"                             |& HttpService
+    print ORS Response["Body"]                            |& HttpService
 
-    while ((HttpService |& getline) > 0) {
-      continue
-    }
+    # skip anything else in the request
+    while ((HttpService |& getline) > 0) continue
     # stop talking to this client
     close(HttpService)
   }
